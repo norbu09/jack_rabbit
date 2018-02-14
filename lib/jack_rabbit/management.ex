@@ -44,8 +44,10 @@ defmodule JackRabbit.Management do
   end
 
   def handle_call({:rabbit_config, config}, _from, state) do
-    # - get creds from vault
-    # - get server connection from consul
-    {:reply, config, state}
+    # use a dedicated auth backend or fall back to file/env config
+    fun = config[:rabbit_config] || JackRabbit.Config.File
+    {:ok, auth} = fun.rabbit_auth()
+    {:ok, conn} = fun.rabbit_conn()
+    {:reply, {:ok, Map.merge(auth, conn)}, state}
   end
 end
