@@ -28,10 +28,10 @@ defmodule JackRabbit.Worker do
   These are the tasks that map to the actual implementation of the calls
   """
 
-  def handle_call({:process, config, job}, _from, state) do
+  def handle_call({:process, _config, job}, _from, state) do
     # push it to a rabbit queue
-    {:ok, res} = JackRabbit.Rabbit.send(state.config.rabbit_pid, config, job)
-    {:reply, res, state}
+    # {:ok, res} = JackRabbit.Rabbit.send(state.config.rabbit_pid, config, job)
+    {:reply, job, state}
   end
 
 end
