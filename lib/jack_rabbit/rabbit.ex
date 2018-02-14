@@ -33,13 +33,6 @@ defmodule JackRabbit.Rabbit do
     end
   end
 
-  def process(pid, meta, job) do
-    Logger.debug("[CLIENT]{process} Got some data: #{inspect job}.")
-    res = GenServer.call(pid, {:client_response, job, meta.correlation_id})
-    Logger.debug("[CLIENT]{process} got meta: #{inspect meta}")
-    GenServer.cast(pid, {:ack, meta.delivery_tag})
-    res
-  end
 
   def call(pid, queue, msg) do
     task = Task.Supervisor.async(JackRabbit.TaskSupervisor, fn ->
@@ -79,7 +72,7 @@ defmodule JackRabbit.Rabbit do
       {:ok, json} ->
         :ets.insert(state.name, {meta1["checksum"], task})
         :ok = AMQP.Basic.publish(state.channel, "", queue, json, [correlation_id: meta1["checksum"], reply_to: state.queue])
-      Logger.warn("#{self() |> :erlang.pid_to_list}: -> #{queue}")
+        Logger.warn("#{self() |> :erlang.pid_to_list}: -> #{queue}")
         Logger.debug("{call} Sending #{inspect json} to #{queue}")
         {:reply, {:ok, meta1["checksum"]}, %{state | progress: msg}}
       error ->
@@ -220,7 +213,7 @@ defmodule JackRabbit.Rabbit do
     Logger.debug("{basic_deliver} State: #{inspect state}")
     case Poison.decode(payload) do
       {:ok, terms} ->
-        Logger.debug("Got valid JSON, processing message with #{__MODULE__}: #{inspect terms}")
+        Logger.debug("Got valid JSON, processing message with #{state.config.processor}: #{inspect terms}")
         :ets.insert(state.name, {meta.delivery_tag, {meta, payload}})
         # TODO: this should be a supervised task that returns instantly to not block this GenServer
         # {:ok, pid} = JackRabbit.WorkerSupervisor.add_worker(config)
@@ -273,7 +266,7 @@ defmodule JackRabbit.Rabbit do
   defp connect(state) do
     error_queue = "error.#{state.queue}"
     reply_queue = "reply.#{state.queue}-" <> random_string(10)
-    Logger.debug("Config: #{inspect state}")
+    # Logger.debug("Config: #{inspect state}")
     case AMQP.Connection.open(Map.to_list(state.config)) do
       {:ok, conn} ->
         Process.monitor(conn.pid)
