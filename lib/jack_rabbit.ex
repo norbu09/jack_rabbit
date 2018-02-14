@@ -16,7 +16,7 @@ defmodule JackRabbit do
   def call(config, message) do
     {:ok, pid} = JackRabbit.Client.start_link(%{})
     JackRabbit.Client.call(pid, config, message)
-    JackRabbit.Client.stop
+    JackRabbit.Client.stop(pid)
   end
 
   @doc """
@@ -31,7 +31,9 @@ defmodule JackRabbit do
 
   """
   def cast(config, message) do
-    JackRabbit.Dispatcher.cast(config, message)
+    {:ok, pid} = JackRabbit.Client.start_link(%{})
+    JackRabbit.Client.cast(pid, config, message)
+    JackRabbit.Client.stop(pid)
   end
 
   @doc """

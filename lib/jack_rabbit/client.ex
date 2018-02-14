@@ -14,12 +14,11 @@ defmodule JackRabbit.Client do
   end
 
   def init(config) do
-    with {:ok, mgmt_pid} <- JackRabbit.Management.start_link(config),
-         {:ok, r_conf}   <- JackRabbit.Management.get_rabbit_config(mgmt_pid),
-         {:ok, r_pid}    <- JackRabbit.Rabbit.start_link(Map.merge(r_conf, %{name: config[:name], queue: config[:queue] || config[:name]})),
-         {:ok, w_pid}    <- JackRabbit.WorkerSupervisor.start_link(),
-         :ok             <- Logger.debug("Started JackRabbit client ..."),
-      do: {:ok, %{config: config, rabbit_config: r_conf, mgmt_pid: mgmt_pid, rabbit_pid: r_pid, worker_pid: w_pid}}
+    with {:ok, r_conf} <- JackRabbit.Management.rabbit_config(),
+         {:ok, r_pid}  <- JackRabbit.Rabbit.start_link(Map.merge(r_conf, %{name: config[:name], queue: config[:queue] || config[:name]})),
+         {:ok, w_pid}  <- JackRabbit.WorkerSupervisor.start_link(),
+         :ok           <- Logger.debug("Started JackRabbit client ..."),
+      do: {:ok, %{config: config, rabbit_config: r_conf, rabbit_pid: r_pid, worker_pid: w_pid}}
   end
 
   def call(pid, config, job) do
@@ -52,21 +51,18 @@ defmodule JackRabbit.Client do
   end
 
   def handle_call({:cast, config, job}, _from, state) do
-    {:ok, pid} = JackRabbit.WorkerSupervisor.add_worker(config)
-    res = JackRabbit.Worker.process(pid, config, job)
-    JackRabbit.WorkerSupervisor.remove_worker(pid)
+    res = JackRabbit.Rabbit.cast(state.rabbit_pid, config.queue, job)
     {:reply, res, state}
   end
 
   def handle_call({:async, config, job, _callback}, _from, state) do
-    {:ok, pid} = JackRabbit.WorkerSupervisor.add_worker(config)
-    res = JackRabbit.Worker.process(pid, config, job)
-    JackRabbit.WorkerSupervisor.remove_worker(pid)
+    # TODO: this still needs actual async handling
+    res = JackRabbit.Rabbit.call(state.rabbit_pid, config.queue, job)
     {:reply, res, state}
   end
 
-  def terminate(reason, state) do
-    JackRabbit.Management.deregister(state.mgmt_pid)
+  def terminate(reason, _state) do
+    # add any teardown stuff here
     {:stop, reason}
   end
 

@@ -1,5 +1,5 @@
 defmodule JackRabbit.Config.File do
-  
+
   def rabbit_auth do
     user = System.get_env("RABBITMQ_USER") || Application.get_env(:jack_rabbit, :rabbit_user, "guest")
     pass = System.get_env("RABBITMQ_PASS") || Application.get_env(:jack_rabbit, :rabbit_pass, "guest")
@@ -11,5 +11,11 @@ defmodule JackRabbit.Config.File do
     vhost = System.get_env("RABBITMQ_VHOST") || Application.get_env(:jack_rabbit, :rabbit_vhost, "/")
     port = System.get_env("RABBITMQ_PORT") || Application.get_env(:jack_rabbit, :rabbit_port, 5672)
     {:ok, %{host: host, port: port, virtual_host: vhost}}
+  end
+  
+  def get_worker do
+    worker = Application.get_env(:jack_rabbit, :worker, [])
+             |> Enum.map(fn(x) -> {JackRabbit.Dispatcher, x} end)
+    {:ok, worker}
   end
 end

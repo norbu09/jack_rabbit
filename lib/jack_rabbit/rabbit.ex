@@ -50,7 +50,7 @@ defmodule JackRabbit.Rabbit do
   end
 
   def cast(pid, queue, msg) do
-    # Logger.debug("[CLIENT] Got cast from JackRabbit - job: #{inspect msg}")
+    Logger.debug("[CLIENT] Got cast from JackRabbit - job: #{inspect msg}")
     GenServer.cast(pid, {:cast, queue, msg})
   end
 

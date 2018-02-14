@@ -14,10 +14,12 @@ defmodule JackRabbit.Dispatcher do
   end
 
   def init(config) do
-    with {:ok, mgmt_pid} <- JackRabbit.Management.start_link(config),
-         {:ok, r_conf}   <- JackRabbit.Management.get_rabbit_config(mgmt_pid),
-         {:ok, r_pid}    <- JackRabbit.Rabbit.start_link(Map.merge(r_conf, %{name: config[:name], queue: config[:queue] || config[:name]})),
-         {:ok, _}        <- JackRabbit.Management.register(mgmt_pid),
+    with {:ok, mgmt_pid} <- JackRabbit.ManagementWorker.start_link(config),
+         {:ok, r_conf}   <- JackRabbit.ManagementWorker.get_rabbit_config(mgmt_pid),
+         {:ok, r_pid}    <- JackRabbit.Rabbit.start_link(Map.merge(r_conf, %{name: config[:name], 
+                                                                             processor: config[:processor], 
+                                                                             queue: config[:queue] || config[:name]})),
+         {:ok, _}        <- JackRabbit.ManagementWorker.register(mgmt_pid),
          {:ok, w_pid}    <- JackRabbit.WorkerSupervisor.start_link(),
          :ok             <- Logger.debug("Started JackRabbit #{config[:name]} worker..."),
       do: {:ok, %{config: config, rabbit_config: r_conf, mgmt_pid: mgmt_pid, rabbit_pid: r_pid, worker_pid: w_pid}}
@@ -69,7 +71,7 @@ defmodule JackRabbit.Dispatcher do
   end
 
   def terminate(reason, state) do
-    JackRabbit.Management.deregister(state.mgmt_pid)
+    JackRabbit.ManagementWorker.deregister(state.mgmt_pid)
     {:stop, reason}
   end
 
