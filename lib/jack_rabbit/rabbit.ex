@@ -191,7 +191,11 @@ defmodule JackRabbit.Rabbit do
       {:ok, terms} ->
         Logger.debug("Got valid JSON, processing message with #{__MODULE__}: #{inspect terms}")
         :ets.insert(state.name, {meta.delivery_tag, {meta, payload}})
-        spawn_link(__MODULE__, :process, [meta, terms])
+        # TODO: this should be a supervised task that returns instantly to not block this GenServer
+        # {:ok, pid} = JackRabbit.WorkerSupervisor.add_worker(config)
+        # res = JackRabbit.Worker.process(pid, config, job)
+        # JackRabbit.WorkerSupervisor.remove_worker(pid)
+        spawn_link(state.config.processor, :process, [meta, terms])
       error ->
         Logger.warn("Got malformed JSON: #{inspect error}")
         AMQP.Basic.reject state.channel, meta.delivery_tag, requeue: false

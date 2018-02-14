@@ -46,6 +46,7 @@ defmodule JackRabbit.Dispatcher do
   """
 
   def handle_call({:call, config, job}, _from, state) do
+    # TODO: this needs more thought. We need to call a remote rabbit, not our own implementation here
     {:ok, pid} = JackRabbit.WorkerSupervisor.add_worker(config)
     res = JackRabbit.Worker.process(pid, config, job)
     JackRabbit.WorkerSupervisor.remove_worker(pid)
@@ -53,6 +54,7 @@ defmodule JackRabbit.Dispatcher do
   end
 
   def handle_call({:cast, config, job}, _from, state) do
+    # TODO: this needs more thought. We need to call a remote rabbit, not our own implementation here
     {:ok, pid} = JackRabbit.WorkerSupervisor.add_worker(config)
     res = JackRabbit.Worker.process(pid, config, job)
     JackRabbit.WorkerSupervisor.remove_worker(pid)
@@ -60,6 +62,7 @@ defmodule JackRabbit.Dispatcher do
   end
 
   def handle_call({:async, config, job, _callback}, _from, state) do
+    # TODO: this needs more thought. We need to call a remote rabbit, not our own implementation here
     {:ok, pid} = JackRabbit.WorkerSupervisor.add_worker(config)
     res = JackRabbit.Worker.process(pid, config, job)
     JackRabbit.WorkerSupervisor.remove_worker(pid)

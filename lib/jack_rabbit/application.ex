@@ -9,7 +9,7 @@ defmodule JackRabbit.Application do
     # List all child processes to be supervised
     children = [
       # Starts a worker by calling: JackRabbit.Worker.start_link(arg)
-      {JackRabbit.Dispatcher, %{name: "foo"}},
+      {JackRabbit.Dispatcher, %{name: "logger", processor: JackRabbit.Processor.Logger}},
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
