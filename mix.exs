@@ -14,7 +14,7 @@ defmodule JackRabbit.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger, :amqp, :amqp_client],
+      extra_applications: [:logger, :amqp],
       mod: {JackRabbit.Application, []}
     ]
   end
@@ -23,8 +23,10 @@ defmodule JackRabbit.MixProject do
   defp deps do
     [
       {:amqp, ">= 0.2.2"},
-      {:amqp_client, ">= 3.6.0"},
-      {:poison, ">= 1.5.0"}
+      {:poison, ">= 1.5.0"},
+      # dev related
+      {:credo, ">= 0.7.3", only: :dev, warn_missing: false},
+      {:distillery, ">= 1.0.0", only: :dev, warn_missing: false}
     ]
   end
 end

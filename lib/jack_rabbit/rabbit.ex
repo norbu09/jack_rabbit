@@ -3,6 +3,8 @@ defmodule JackRabbit.Rabbit do
   use AMQP
   require Logger
 
+  @timeout Application.get_env(:jack_rabbit, :timeout, 10000)
+
   def start_link(config) do
     {:ok, hostname} = :inet.gethostname
     queue = config[:queue] || "jr.client-" <> random_string()
@@ -31,6 +33,35 @@ defmodule JackRabbit.Rabbit do
     end
   end
 
+  def process(pid, meta, job) do
+    Logger.debug("[CLIENT]{process} Got some data: #{inspect job}.")
+    res = GenServer.call(pid, {:client_response, job, meta.correlation_id})
+    Logger.debug("[CLIENT]{process} got meta: #{inspect meta}")
+    GenServer.cast(pid, {:ack, meta.delivery_tag})
+    res
+  end
+
+  def call(pid, queue, msg) do
+    task = Task.Supervisor.async(JackRabbit.TaskSupervisor, fn ->
+      receive do
+        response ->
+          Logger.debug("[CLIENT]{call} got response #{inspect response}")
+          response
+        after @timeout ->
+          Logger.error("[CLIENT]{call} Did not get a response for this call: #{inspect msg}")
+          {:error, :timeout}
+        end
+    end)
+    GenServer.call(pid, {:call, queue, msg, task.pid})
+    Task.await(task, @timeout)
+  end
+
+  def cast(pid, queue, msg) do
+    # Logger.debug("[CLIENT] Got cast from JackRabbit - job: #{inspect msg}")
+    GenServer.cast(pid, {:cast, queue, msg})
+  end
+
+  ### internal call handling
 
   def handle_call({:call, queue, job, task}, _from, state) do
     # - need to generate a job ID
