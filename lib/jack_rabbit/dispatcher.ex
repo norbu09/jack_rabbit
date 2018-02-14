@@ -44,16 +44,25 @@ defmodule JackRabbit.Dispatcher do
   These are the tasks that map to the actual implementation of the calls
   """
 
-  def handle_call({:call, _config, job}, _from, state) do
-    {:reply, job, state}
+  def handle_call({:call, config, job}, _from, state) do
+    {:ok, pid} = JackRabbit.Worker.start_link(config)
+    res = JackRabbit.Worker.process(pid, config, job)
+    JackRabbit.Worker.stop(pid)
+    {:reply, res, state}
   end
 
-  def handle_call({:cast, _config, job}, _from, state) do
-    {:reply, job, state}
+  def handle_call({:cast, config, job}, _from, state) do
+    {:ok, pid} = JackRabbit.Worker.start_link(config)
+    res = JackRabbit.Worker.process(pid, config, job)
+    JackRabbit.Worker.stop(pid)
+    {:reply, res, state}
   end
 
-  def handle_call({:async, _config, job, _callback}, _from, state) do
-    {:reply, job, state}
+  def handle_call({:async, config, job, _callback}, _from, state) do
+    {:ok, pid} = JackRabbit.Worker.start_link(config)
+    res = JackRabbit.Worker.process(pid, config, job)
+    JackRabbit.Worker.stop(pid)
+    {:reply, res, state}
   end
 
   def terminate(reason, state) do
