@@ -22,7 +22,7 @@ defmodule JackRabbit.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:amqp, ">= 0.2.2"},
+      {:amqp, ">= 1.0.0"},
       {:poison, ">= 1.5.0"},
       # dev related
       {:credo, ">= 0.7.3", only: :dev, warn_missing: false},
