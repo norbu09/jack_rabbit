@@ -10,7 +10,7 @@ defmodule JackRabbit.Rabbit do
     queue = config[:queue] || "jr.client-" <> random_string()
     exchange = config[:exchange] || List.to_string(hostname)
     Logger.info("Starting worker on #{queue}")
-    GenServer.start_link(__MODULE__, %{progress: "starting",
+    GenServer.start_link(__MODULE__, %{
       queue: queue,
       name: String.to_atom(queue),
       error_queue: nil,
@@ -81,18 +81,14 @@ defmodule JackRabbit.Rabbit do
             :ok = Basic.publish(state.channel, conf[:exchange] || "", conf.queue, json, [correlation_id: meta1["checksum"], reply_to: state.queue])
             Logger.warn("#{self() |> :erlang.pid_to_list}: -> #{conf.queue}")
             Logger.debug("{call} Sending #{inspect json} to #{conf.queue}")
-            {:reply, {:ok, meta1["checksum"]}, %{state | progress: msg}}
-          [{_id, pid}] when is_pid(pid) ->
-            Logger.debug("Answering directly to PID")
-            send(pid, job)
-            {:reply, {:ok, meta1["checksum"]}, %{state | progress: msg}}
+            {:reply, {:ok, meta1["checksum"]}, state}
           error ->
             Logger.error("Matching error: got #{inspect error}")
-            {:reply, {:error, error}, %{state | progress: error}}
+            {:reply, {:error, error}, state}
         end
       error ->
         Logger.error("Could not JSON encode: #{inspect error}")
-        {:reply, error, %{state | progress: error}}
+        {:reply, error, state}
     end
   end
 
@@ -135,27 +131,31 @@ defmodule JackRabbit.Rabbit do
   end
 
   # TODO: this needs to call the worker implementation
-  defp consume(state, tag, _redelivered, json) do
+  defp consume(state, tag, redelivered, json) do
     case Poison.decode(json) do
       {:ok, payload} ->
+		# This mimics the worker atm
         Logger.info("Got a message: #{inspect payload}")
-        # FIXME: only ack if message was a success
-        :ok = Basic.ack state.channel, tag
+        task = Task.async(state.config.processor, :process, [self(), payload])
+        res = Task.await(task, @timeout)
+
+        pl2 = Map.put(payload, "response", res)
 
         table = payload["meta"]["reply_to"] |> String.to_atom
-        # Logger.debug("State: #{inspect state}")
-        # Logger.debug("Table: ours: #{table} - all: #{inspect :ets.all()}")
-        # Logger.debug("Elements: #{:ets.tab2list(table)}")
         case :ets.lookup(table, payload["meta"]["checksum"]) do
           [{_id, pid}] when is_pid(pid) ->
             Logger.debug("Answering directly to PID")
-            send(pid, payload)
-            {:reply, {:ok, payload}, state}
+            send(pid, pl2)
+            :ok = Basic.ack state.channel, tag
+            {:reply, {:ok, pl2}, state}
           error ->
             Logger.error("Matching error: got #{inspect error}")
-            {:reply, {:error, error}, %{state | progress: error}}
+            :ok = Basic.reject state.channel, tag, requeue: not redelivered
+            {:reply, {:error, error}, state}
         end
-      error -> error
+      error ->
+        Logger.error("Could not JSON encode: #{inspect error}")
+		error
     end
   end
 
