@@ -1,6 +1,6 @@
 defmodule JackRabbit.Worker do
 
-@callback process(args :: term, state :: term) ::
+@callback process(pid :: pid, meta :: term, job :: term) ::
               {:ok, result :: term, new_state :: term}
               | {:error, reason :: term, new_state :: term}
 end

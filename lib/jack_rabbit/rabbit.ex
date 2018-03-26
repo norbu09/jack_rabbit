@@ -34,7 +34,7 @@ defmodule JackRabbit.Rabbit do
   end
 
 
-  def call(pid, queue, msg) do
+  def call(pid, conf, msg) do
     task = Task.Supervisor.async(JackRabbit.TaskSupervisor, fn ->
       receive do
         response ->
@@ -45,7 +45,7 @@ defmodule JackRabbit.Rabbit do
           {:error, :timeout}
         end
     end)
-    GenServer.call(pid, {:call, queue, msg, task.pid})
+    {:ok, _id} = GenServer.call(pid, {:call, conf, msg, task.pid})
     Task.await(task, @timeout)
   end
 
@@ -56,7 +56,8 @@ defmodule JackRabbit.Rabbit do
 
   ### internal call handling
 
-  def handle_call({:call, queue, job, task}, _from, state) do
+  # handle client request and send the message to the right queue
+  def handle_call({:call, conf, job, task_pid}, _from, state) do
     # - need to generate a job ID
     # - store
     # FIXME the checksum should be a proper checksum at some stage
@@ -64,32 +65,50 @@ defmodule JackRabbit.Rabbit do
     meta1 = meta
             |> Map.put("checksum", Map.get(meta, "checksum", random_string(25)))
             |> Map.put("reply_to", Map.get(meta, "reply_to", state.queue))
-
     job1 = Map.put(job, "meta", meta1)
-    msg = "Got a call for #{queue}"
+    msg = "Got a call for #{conf.queue}"
     Logger.debug("{call} #{msg}")
     case Poison.encode(job1) do
       {:ok, json} ->
-        :ets.insert(state.name, {meta1["checksum"], task})
-        :ok = AMQP.Basic.publish(state.channel, "", queue, json, [correlation_id: meta1["checksum"], reply_to: state.queue])
-        Logger.warn("#{self() |> :erlang.pid_to_list}: -> #{queue}")
-        Logger.debug("{call} Sending #{inspect json} to #{queue}")
-        {:reply, {:ok, meta1["checksum"]}, %{state | progress: msg}}
+        case :ets.lookup(state.name, meta1["checksum"]) do
+          [] -> 
+            true = :ets.insert(state.name, {meta1["checksum"], task_pid})
+            :ok = AMQP.Basic.publish(state.channel, conf[:exchange] || "", conf.queue, json, [correlation_id: meta1["checksum"], reply_to: state.queue])
+            Logger.warn("#{self() |> :erlang.pid_to_list}: -> #{conf.queue}")
+            Logger.debug("{call} Sending #{inspect json} to #{conf.queue}")
+            {:reply, {:ok, meta1["checksum"]}, %{state | progress: msg}}
+          [{_id, pid}] when is_pid(pid) ->
+            Logger.debug("Answering directly to PID")
+            send(pid, job)
+            {:reply, {:ok, meta1["checksum"]}, %{state | progress: msg}}
+          error ->
+            Logger.error("Matching error: got #{inspect error}")
+            {:reply, {:error, error}, %{state | progress: error}}
+        end
       error ->
+        Logger.error("Could not JSON encode: #{inspect error}")
         {:reply, error, %{state | progress: error}}
     end
   end
 
-  def handle_call({:client_response, res, tag}, _from, state) do
+  def handle_call({:client_response, res, thing}, _from, state) do
+    tag = tag(thing)
     cli_res = case :ets.lookup(state.name, tag) do
-      [{_id, pid}] ->
+      [{_id, pid}] when is_pid(pid)->
         :ets.delete(state.name, tag)
         Logger.debug("{client_response} Responding to #{inspect pid} with #{inspect res}")
         send(pid, res)
         Logger.debug("{client_response} acking message")
         res
-      _ ->
-        Logger.debug("{client_response} nothing in ETS for #{tag}")
+      [{_id, {meta, _json}}] when is_map(meta)->
+        # :ets.delete(state.name, tag)
+        msg = Map.merge(res, %{"meta" => meta})
+        Logger.debug("{client_response} Responding to #{meta[:reply_to]} with #{inspect msg}")
+        GenServer.cast(self(), {:ok, msg, meta})
+        Logger.debug("{client_response} acking message")
+        res
+      err ->
+        Logger.debug("{client_response} nothing in ETS for #{tag} - got #{inspect err}")
         res
     end
     msg = "Got a response for call with checksum #{tag}"
@@ -213,13 +232,20 @@ defmodule JackRabbit.Rabbit do
     Logger.debug("{basic_deliver} State: #{inspect state}")
     case Poison.decode(payload) do
       {:ok, terms} ->
-        Logger.debug("Got valid JSON, processing message with #{state.config.processor}: #{inspect terms}")
-        :ets.insert(state.name, {meta.delivery_tag, {meta, payload}})
-        # TODO: this should be a supervised task that returns instantly to not block this GenServer
-        # {:ok, pid} = JackRabbit.WorkerSupervisor.add_worker(config)
-        # res = JackRabbit.Worker.process(pid, config, job)
-        # JackRabbit.WorkerSupervisor.remove_worker(pid)
-        spawn_link(state.config.processor, :process, [meta, terms])
+        # Logger.debug("Got valid JSON, processing message with #{state.config.processor}: #{inspect terms}")
+        case :ets.lookup(state.name, meta.correlation_id) do
+          [] -> 
+            true = :ets.insert(state.name, {meta.correlation_id, {meta, payload}})
+            # TODO: this should be a supervised task that returns instantly to not block this GenServer
+            # {:ok, pid} = JackRabbit.WorkerSupervisor.add_worker(config)
+            # res = JackRabbit.Worker.process(pid, config, job)
+            # JackRabbit.WorkerSupervisor.remove_worker(pid)
+            spawn_link(state.config.processor, :process, [self(), meta, terms])
+          [{_id, pid}] when is_pid(pid) ->
+            send(pid, payload)
+          error ->
+            Logger.error("Matching error: got #{inspect error}")
+        end
       error ->
         Logger.warn("Got malformed JSON: #{inspect error}")
         AMQP.Basic.reject state.channel, meta.delivery_tag, requeue: false
@@ -254,7 +280,7 @@ defmodule JackRabbit.Rabbit do
   end
 
   defp tag(thing) when is_map(thing) do
-    thing.delivery_tag
+    thing.correlation_id
   end
   defp tag(thing) when is_binary(thing) do
     thing

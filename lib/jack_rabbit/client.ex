@@ -33,8 +33,9 @@ defmodule JackRabbit.Client do
     GenServer.call(pid, {:async, config, job, callback})
   end
 
-  def stop(pid) do
-    GenServer.stop(pid)
+  def stop(_pid) do
+    # GenServer.stop(pid)
+    Logger.info("Should stop here really")
   end
 
 
@@ -46,18 +47,18 @@ defmodule JackRabbit.Client do
   """
 
   def handle_call({:call, config, job}, _from, state) do
-    res = JackRabbit.Rabbit.call(state.rabbit_pid, config.queue, job)
+    res = JackRabbit.Rabbit.call(state.rabbit_pid, config, job)
     {:reply, res, state}
   end
 
   def handle_call({:cast, config, job}, _from, state) do
-    res = JackRabbit.Rabbit.cast(state.rabbit_pid, config.queue, job)
+    res = JackRabbit.Rabbit.cast(state.rabbit_pid, config, job)
     {:reply, res, state}
   end
 
   def handle_call({:async, config, job, _callback}, _from, state) do
     # TODO: this still needs actual async handling
-    res = JackRabbit.Rabbit.call(state.rabbit_pid, config.queue, job)
+    res = JackRabbit.Rabbit.call(state.rabbit_pid, config, job)
     {:reply, res, state}
   end
 
